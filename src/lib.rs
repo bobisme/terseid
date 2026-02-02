@@ -4,3 +4,4 @@ pub mod error;
 pub mod generate;
 pub mod hash;
 pub mod parse;
+pub mod resolve;
