@@ -3,7 +3,7 @@ set -euo pipefail
 
 # --- Defaults ---
 MAX_LOOPS=20
-LOOP_PAUSE=60
+LOOP_PAUSE=2
 CLAUDE_TIMEOUT=900
 WORKER_MODEL=haiku
 WORKER_TIMEOUT=600
@@ -11,6 +11,17 @@ MODEL=opus
 REVIEW=false
 PROJECT=""
 AGENT=""
+
+# --- Load config from .botbox.json if available ---
+if [ -f .botbox.json ] && command -v jq >/dev/null 2>&1; then
+	REVIEW=$(jq -r '.review.enabled // false' .botbox.json)
+	MODEL=$(jq -r '.agents.dev.model // "opus"' .botbox.json)
+	MAX_LOOPS=$(jq -r '.agents.dev.max_loops // 20' .botbox.json)
+	LOOP_PAUSE=$(jq -r '.agents.dev.pause // 2' .botbox.json)
+	CLAUDE_TIMEOUT=$(jq -r '.agents.dev.timeout // 900' .botbox.json)
+	WORKER_MODEL=$(jq -r '.agents.worker.model // "haiku"' .botbox.json)
+	WORKER_TIMEOUT=$(jq -r '.agents.worker.timeout // 600' .botbox.json)
+fi
 
 # --- Usage ---
 usage() {

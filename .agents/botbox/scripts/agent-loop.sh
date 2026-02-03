@@ -3,11 +3,17 @@ set -euo pipefail
 
 # --- Defaults ---
 MAX_LOOPS=20
-LOOP_PAUSE=5
+LOOP_PAUSE=2
 CLAUDE_TIMEOUT=600
 MODEL=""
 PROJECT=""
 AGENT=""
+
+# --- Load config from .botbox.json if available ---
+if [ -f .botbox.json ] && command -v jq >/dev/null 2>&1; then
+	MODEL=$(jq -r '.agents.worker.model // ""' .botbox.json)
+	CLAUDE_TIMEOUT=$(jq -r '.agents.worker.timeout // 600' .botbox.json)
+fi
 
 # --- Usage ---
 usage() {
