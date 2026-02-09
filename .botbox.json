@@ -1,3 +1,27 @@
 {
-  "version": "1.0.13"
+  "version": "1.0.13",
+  "project": {
+    "name": "terseid",
+    "type": ["cli"],
+    "languages": ["rust"],
+    "defaultAgent": "terseid-dev",
+    "channel": "terseid"
+  },
+  "tools": {
+    "beads": true,
+    "maw": true,
+    "crit": true,
+    "botbus": false,
+    "botty": false
+  },
+  "review": {
+    "enabled": true,
+    "reviewers": ["security"]
+  },
+  "pushMain": false,
+  "agents": {
+    "dev": { "model": "opus", "maxLoops": 20, "pause": 2, "timeout": 900 },
+    "worker": { "model": "haiku", "timeout": 600 },
+    "reviewer": { "model": "opus", "maxLoops": 20, "pause": 2, "timeout": 600 }
+  }
 }
