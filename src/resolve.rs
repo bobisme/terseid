@@ -52,18 +52,24 @@ pub struct IdResolver {
 
 impl IdResolver {
     /// Creates a new ID resolver with the given configuration.
-    pub fn new(config: ResolverConfig) -> Self {
+    #[must_use]
+    pub const fn new(config: ResolverConfig) -> Self {
         Self { config }
     }
 
     /// Resolves a user input to an ID using fuzzy matching.
     ///
     /// Resolution order:
-    /// 1. Exact match — input (lowercased, trimmed) matches via exists_fn
-    /// 2. Prefix normalization — if no dash in input, prepend default_prefix + "-" and retry exists_fn
-    /// 3. Substring match — call substring_match_fn with input, exactly one match succeeds,
-    ///    multiple matches -> AmbiguousId error
-    /// 4. Not found -> NotFound error
+    /// 1. Exact match — input (lowercased, trimmed) matches via `exists_fn`
+    /// 2. Prefix normalization — if no dash in input, prepend `default_prefix` + "-" and retry `exists_fn`
+    /// 3. Substring match — call `substring_match_fn` with input, exactly one match succeeds,
+    ///    multiple matches -> `AmbiguousId` error
+    /// 4. Not found -> `NotFound` error
+    ///
+    /// # Errors
+    ///
+    /// Returns `AmbiguousId` if multiple IDs match the substring.
+    /// Returns `NotFound` if no match is found at any stage.
     pub fn resolve<F, G>(
         &self,
         input: &str,
@@ -122,9 +128,7 @@ impl IdResolver {
         }
 
         // Stage 4: Not found
-        Err(TerseIdError::NotFound {
-            id: normalized,
-        })
+        Err(TerseIdError::NotFound { id: normalized })
     }
 }
 
@@ -132,20 +136,20 @@ impl IdResolver {
 ///
 /// Given a list of full IDs and a hash substring, returns all IDs whose hash portion
 /// (after the last dash, before the first dot) contains the substring.
-pub fn find_matching_ids(all_ids: &[&str], hash_substring: &str) -> Vec<String> {
+/// Both the IDs and the substring are compared case-insensitively.
+pub fn find_matching_ids(all_ids: &[impl AsRef<str>], hash_substring: &str) -> Vec<String> {
+    let needle = hash_substring.to_lowercase();
     all_ids
         .iter()
-        .filter_map(|id| {
-            match parse_id(id) {
-                Ok(parsed) => {
-                    if parsed.hash.contains(hash_substring) {
-                        Some(parsed.to_id_string())
-                    } else {
-                        None
-                    }
+        .filter_map(|id| match parse_id(id.as_ref()) {
+            Ok(parsed) => {
+                if parsed.hash.contains(&needle) {
+                    Some(parsed.to_id_string())
+                } else {
+                    None
                 }
-                Err(_) => None,
             }
+            Err(_) => None,
         })
         .collect()
 }
@@ -294,9 +298,7 @@ mod tests {
         let config = ResolverConfig::new("bd");
         let resolver = IdResolver::new(config);
 
-        let substring_fn = |_: &str| {
-            vec!["bd-a7x".to_string(), "bd-a7y".to_string()]
-        };
+        let substring_fn = |_: &str| vec!["bd-a7x".to_string(), "bd-a7y".to_string()];
 
         let result = resolver.resolve("a7", |id| id == "nonexistent", substring_fn);
         assert!(result.is_err());
@@ -381,11 +383,7 @@ mod tests {
         let resolver = IdResolver::new(config);
 
         let substring_fn = |_: &str| vec!["bd-xyz".to_string()];
-        let result = resolver.resolve(
-            "a7x",
-            |id| id == "bd-a7x",
-            substring_fn,
-        );
+        let result = resolver.resolve("a7x", |id| id == "bd-a7x", substring_fn);
         assert!(result.is_ok());
         let resolved = result.unwrap();
         assert_eq!(resolved.id, "bd-a7x");

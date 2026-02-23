@@ -1,7 +1,7 @@
-/// Child ID functions for managing hierarchical relationships between terseid IDs.
-///
-/// Terseid supports hierarchical child IDs by appending dot-separated numbers to a parent ID.
-/// For example, child_id("bd-a7x", 1) returns "bd-a7x.1", and child_id("bd-a7x.1", 3) returns "bd-a7x.1.3".
+//! Child ID functions for managing hierarchical relationships between terseid IDs.
+//!
+//! Terseid supports hierarchical child IDs by appending dot-separated numbers to a parent ID.
+//! For example, `child_id("bd-a7x", 1)` returns `"bd-a7x.1"`, and `child_id("bd-a7x.1", 3)` returns `"bd-a7x.1.3"`.
 
 use crate::parse::parse_id;
 
@@ -19,8 +19,9 @@ use crate::parse::parse_id;
 /// assert_eq!(child_id("bd-a7x.1", 3), "bd-a7x.1.3");
 /// assert_eq!(child_id("bd-a7x.1.3", 7), "bd-a7x.1.3.7");
 /// ```
+#[must_use]
 pub fn child_id(parent_id: &str, child_number: u32) -> String {
-    format!("{}.{}", parent_id, child_number)
+    format!("{parent_id}.{child_number}")
 }
 
 /// Checks if an ID is a child ID (has a child path).
@@ -37,11 +38,9 @@ pub fn child_id(parent_id: &str, child_number: u32) -> String {
 /// assert!(is_child_id("bd-a7x.1"));       // Direct child
 /// assert!(is_child_id("bd-a7x.1.3"));     // Grandchild
 /// ```
+#[must_use]
 pub fn is_child_id(id: &str) -> bool {
-    match parse_id(id) {
-        Ok(parsed) => !parsed.child_path.is_empty(),
-        Err(_) => false,
-    }
+    parse_id(id).is_ok_and(|parsed| !parsed.child_path.is_empty())
 }
 
 /// Returns the depth of an ID (number of child path segments).
@@ -59,11 +58,9 @@ pub fn is_child_id(id: &str) -> bool {
 /// assert_eq!(id_depth("bd-a7x.1.3"), 2);      // Depth 2
 /// assert_eq!(id_depth("bd-a7x.1.3.7"), 3);    // Depth 3
 /// ```
+#[must_use]
 pub fn id_depth(id: &str) -> usize {
-    match parse_id(id) {
-        Ok(parsed) => parsed.depth(),
-        Err(_) => 0,
-    }
+    parse_id(id).map_or(0, |parsed| parsed.depth())
 }
 
 #[cfg(test)]
@@ -90,7 +87,7 @@ mod tests {
     #[test]
     fn test_child_id_max_u32() {
         let max = u32::MAX;
-        assert_eq!(child_id("bd-a7x", max), format!("bd-a7x.{}", max));
+        assert_eq!(child_id("bd-a7x", max), format!("bd-a7x.{max}"));
     }
 
     #[test]
@@ -105,10 +102,7 @@ mod tests {
 
     #[test]
     fn test_child_id_deeply_nested() {
-        assert_eq!(
-            child_id("bd-a7x.1.2.3.4.5", 99),
-            "bd-a7x.1.2.3.4.5.99"
-        );
+        assert_eq!(child_id("bd-a7x.1.2.3.4.5", 99), "bd-a7x.1.2.3.4.5.99");
     }
 
     #[test]
@@ -118,7 +112,6 @@ mod tests {
 
     #[test]
     fn test_child_id_chain() {
-        // Demonstrate building a chain: root -> child1 -> child2 -> child3
         let root = "bd-a7x";
         let child1 = child_id(root, 1);
         let child2 = child_id(&child1, 2);
@@ -153,7 +146,6 @@ mod tests {
 
     #[test]
     fn test_is_child_id_invalid_format() {
-        // Invalid ID should return false
         assert!(!is_child_id("invalid"));
         assert!(!is_child_id("bd-"));
         assert!(!is_child_id(""));
@@ -243,7 +235,7 @@ mod tests {
     #[test]
     fn test_id_depth_child_with_max_u32() {
         let max = u32::MAX;
-        let id = format!("bd-a7x.{}", max);
+        let id = format!("bd-a7x.{max}");
         assert_eq!(id_depth(&id), 1);
     }
 
@@ -251,14 +243,12 @@ mod tests {
 
     #[test]
     fn test_child_id_consistency() {
-        // When we create a child_id, is_child_id should return true
         let child = child_id("bd-a7x", 1);
         assert!(is_child_id(&child));
     }
 
     #[test]
     fn test_child_id_depth_consistency() {
-        // The depth of a child_id should match the number of child path segments
         let child = child_id("bd-a7x", 1);
         assert_eq!(id_depth(&child), 1);
 
@@ -271,7 +261,6 @@ mod tests {
 
     #[test]
     fn test_parent_and_child_depth_relation() {
-        // parent depth + 1 should equal child depth
         let parent = "bd-a7x";
         let child = child_id(parent, 1);
 
@@ -284,8 +273,6 @@ mod tests {
 
     #[test]
     fn test_is_child_and_depth_consistency() {
-        // If is_child_id returns true, id_depth should be > 0
-        // If is_child_id returns false, id_depth should be == 0
         let root = "bd-a7x";
         let child = "bd-a7x.1";
         let grandchild = "bd-a7x.1.3";
@@ -297,7 +284,6 @@ mod tests {
 
     #[test]
     fn test_edge_case_uppercase_input() {
-        // parse_id normalizes to lowercase, so uppercase should work
         assert!(!is_child_id("BD-A7X"));
         assert!(is_child_id("BD-A7X.1"));
         assert_eq!(id_depth("BD-A7X"), 0);
@@ -306,7 +292,6 @@ mod tests {
 
     #[test]
     fn test_child_id_output_can_be_parsed() {
-        // The output of child_id should be valid and parseable
         let parent = "bd-a7x";
         let child = child_id(parent, 5);
         assert!(is_child_id(&child));
@@ -322,11 +307,9 @@ mod tests {
         let child1 = child_id("bd-a7x", 1);
         let child2 = child_id("bd-a7x", 2);
 
-        // Both should be children with depth 1
         assert_eq!(id_depth(&child1), 1);
         assert_eq!(id_depth(&child2), 1);
 
-        // Both should be recognized as children
         assert!(is_child_id(&child1));
         assert!(is_child_id(&child2));
     }

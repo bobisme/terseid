@@ -1,11 +1,15 @@
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 
 const BASE36_CHARS: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
 
 /// SHA256 input, take first 8 bytes as big-endian u64
 pub(crate) fn compute_hash(input: impl AsRef<[u8]>) -> u64 {
     let hash = Sha256::digest(input.as_ref());
-    u64::from_be_bytes(hash[..8].try_into().unwrap())
+    u64::from_be_bytes(
+        hash[..8]
+            .try_into()
+            .expect("SHA256 always produces at least 8 bytes"),
+    )
 }
 
 /// Encode u64 as base36 lowercase string
@@ -20,7 +24,8 @@ pub(crate) fn base36_encode(value: u64) -> String {
         v /= 36;
     }
     result.reverse();
-    String::from_utf8(result).unwrap()
+    // Safety: BASE36_CHARS only contains ASCII bytes
+    String::from_utf8(result).expect("base36 chars are always valid UTF-8")
 }
 
 /// Public standalone hash function: base36 hash truncated/zero-padded to length chars
@@ -30,7 +35,7 @@ pub fn hash(input: impl AsRef<[u8]>, length: usize) -> String {
     if encoded.len() >= length {
         encoded[..length].to_string()
     } else {
-        format!("{:0>width$}", encoded, width = length)
+        format!("{encoded:0>length$}")
     }
 }
 
@@ -48,13 +53,10 @@ mod tests {
 
     #[test]
     fn test_compute_hash_known_value() {
-        // Known value test - SHA256 of "hello" first 8 bytes as big-endian u64
+        // SHA256("hello") = 2cf24dba5fb0a30e...
+        // First 8 bytes as big-endian u64: 0x2cf24dba5fb0a30e = 3238736544897475342
         let input = b"hello";
         let hash = compute_hash(input);
-        // This is deterministic, so we can verify against a known computation
-        // SHA256("hello") = 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824
-        // First 8 bytes: 2cf24dba5fb0a30e
-        // As big-endian u64: 0x2cf24dba5fb0a30e = 3238736544897475342
         assert_eq!(hash, 3238736544897475342);
     }
 
@@ -91,8 +93,10 @@ mod tests {
         let value = u64::MAX;
         let encoded = base36_encode(value);
         for c in encoded.chars() {
-            assert!(c.is_ascii_digit() || (c >= 'a' && c <= 'z'),
-                    "Invalid base36 character: {}", c);
+            assert!(
+                c.is_ascii_digit() || (c >= 'a' && c <= 'z'),
+                "Invalid base36 character: {c}"
+            );
         }
     }
 
@@ -108,8 +112,12 @@ mod tests {
         let input = b"test";
         for length in 1..20 {
             let result = hash(input, length);
-            assert_eq!(result.len(), length,
-                      "hash() should return exactly {} characters, got {}", length, result.len());
+            assert_eq!(
+                result.len(),
+                length,
+                "hash() should return exactly {length} characters, got {}",
+                result.len()
+            );
         }
     }
 
@@ -118,8 +126,11 @@ mod tests {
         let input = b"x";
         let result = hash(input, 10);
         assert_eq!(result.len(), 10);
-        // Should be zero-padded if the base36 encoding is shorter
-        assert!(result.chars().all(|c| c.is_ascii_digit() || (c >= 'a' && c <= 'z')));
+        assert!(
+            result
+                .chars()
+                .all(|c| c.is_ascii_digit() || (c >= 'a' && c <= 'z'))
+        );
     }
 
     #[test]
@@ -127,9 +138,6 @@ mod tests {
         let input = b"y";
         let hash_long = hash(input, 20);
         let hash_short = hash(input, 5);
-        // The short hash should be a prefix of the long hash, but only if the encoded
-        // hash is longer than the requested length. If padding is involved, they may differ.
-        // Instead, just verify both have correct lengths
         assert_eq!(hash_short.len(), 5);
         assert_eq!(hash_long.len(), 20);
     }
@@ -147,40 +155,10 @@ mod tests {
         let input = b"base36 validation";
         let result = hash(input, 15);
         for c in result.chars() {
-            assert!(c.is_ascii_digit() || (c >= 'a' && c <= 'z'),
-                    "Invalid base36 character in hash: {}", c);
+            assert!(
+                c.is_ascii_digit() || (c >= 'a' && c <= 'z'),
+                "Invalid base36 character in hash: {c}"
+            );
         }
     }
-
-    // proptest tests for base36 alphabet validity
-    // Uncomment and add proptest as a dev dependency to enable
-    /*
-    use proptest::proptest;
-
-    proptest! {
-        #[test]
-        fn prop_base36_valid_alphabet(value in 0u64..u64::MAX) {
-            let encoded = base36_encode(value);
-            for c in encoded.chars() {
-                prop_assert!(c.is_ascii_digit() || (c >= 'a' && c <= 'z'),
-                    "base36_encode produced invalid character: {}", c);
-            }
-        }
-
-        #[test]
-        fn prop_hash_returns_exact_length(input in ".*", length in 1usize..100) {
-            let result = hash(input.as_bytes(), length);
-            prop_assert_eq!(result.len(), length);
-        }
-
-        #[test]
-        fn prop_hash_valid_chars(input in ".*", length in 1usize..50) {
-            let result = hash(input.as_bytes(), length);
-            for c in result.chars() {
-                prop_assert!(c.is_ascii_digit() || (c >= 'a' && c <= 'z'),
-                    "hash produced invalid character: {}", c);
-            }
-        }
-    }
-    */
 }

@@ -7,27 +7,36 @@ pub struct IdGenerator {
 
 impl IdGenerator {
     /// Create a new ID generator with the given config.
-    pub fn new(config: IdConfig) -> Self {
+    #[must_use]
+    pub const fn new(config: IdConfig) -> Self {
         Self { config }
     }
 
     /// Get the prefix for this generator.
+    #[must_use]
     pub fn prefix(&self) -> &str {
         &self.config.prefix
     }
 
     /// Compute optimal hash length using the birthday problem approximation.
     ///
-    /// Finds the shortest length where P(collision) = 1 - e^(-n^2 / 2d) < max_collision_prob,
-    /// where d = 36^length (the size of the ID space at that length).
+    /// Finds the shortest length where `P(collision) = 1 - e^(-n^2 / 2d) < max_collision_prob`,
+    /// where `d = 36^length` (the size of the ID space at that length).
     ///
-    /// Starting from min_hash_length, returns the first length that satisfies the threshold.
-    /// If no length up to max_hash_length satisfies it, returns max_hash_length.
+    /// Starting from `min_hash_length`, returns the first length that satisfies the threshold.
+    /// If no length up to `max_hash_length` satisfies it, returns `max_hash_length`.
+    #[must_use]
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap
+    )]
     pub fn optimal_length(&self, item_count: usize) -> usize {
         let n = item_count as f64;
 
         for length in self.config.min_hash_length..=self.config.max_hash_length {
-            let d = 36_usize.pow(length as u32) as f64;
+            // length is bounded by max_hash_length (default 8), safe to cast
+            let d = 36_f64.powi(length as i32);
             let exponent = -((n.powi(2)) / (2.0 * d));
             let p_collision = 1.0 - exponent.exp();
 
@@ -46,14 +55,15 @@ impl IdGenerator {
     /// hash of the seed bytes truncated/padded to the specified length.
     pub fn candidate(&self, seed: impl AsRef<[u8]>, hash_length: usize) -> String {
         let hash_str = crate::hash::hash(seed, hash_length);
-        format!("{}-{}", self.config.prefix, hash_str)
+        let prefix = &self.config.prefix;
+        format!("{prefix}-{hash_str}")
     }
 
     /// Generate an ID with full collision avoidance.
     ///
     /// Uses a multi-tier strategy:
     /// 1. Nonce escalation: try nonces 0-9 at optimal length
-    /// 2. Length extension: increment length, repeat up to max_hash_length
+    /// 2. Length extension: increment length, repeat up to `max_hash_length`
     /// 3. Long fallback: 12-char hashes, nonces 0-1000
     /// 4. Desperate fallback: append nonce number to hash
     ///
@@ -99,15 +109,17 @@ impl IdGenerator {
         // This guarantees uniqueness since we're appending the nonce directly
         let seed = seed_fn(0);
         let hash_str = crate::hash::hash(&seed, 12);
+        let prefix = &self.config.prefix;
         for nonce in 0..=10000 {
-            let desperate = format!("{}-{}{}", self.config.prefix, hash_str, nonce);
+            let desperate = format!("{prefix}-{hash_str}{nonce}");
             if !exists(&desperate) {
                 return desperate;
             }
         }
 
         // Absolute fallback: should never reach here in practice
-        format!("{}-{}.fallback", self.config.prefix, crate::hash::hash(&seed_fn(0), 12))
+        let fallback_hash = crate::hash::hash(seed_fn(0), 12);
+        format!("{prefix}-{fallback_hash}.fallback")
     }
 }
 
@@ -278,7 +290,7 @@ mod tests {
 
         let id = generator.generate(
             |nonce| format!("content-{}", nonce).into_bytes(),
-            250_000, // High item count should use longer hashes
+            250_000,            // High item count should use longer hashes
             |_candidate| false, // No collisions
         );
 
@@ -357,10 +369,7 @@ mod tests {
         let generator = IdGenerator::new(IdConfig::new("bd"));
 
         for seed_val in 0..100 {
-            let candidate = generator.candidate(
-                format!("seed-{}", seed_val).as_bytes(),
-                6,
-            );
+            let candidate = generator.candidate(format!("seed-{}", seed_val).as_bytes(), 6);
 
             // Extract hash part
             let parts: Vec<&str> = candidate.split('-').collect();
@@ -404,5 +413,209 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ========== Phase 2: Length extension tests ==========
+
+    #[test]
+    fn test_generate_phase2_length_extension() {
+        // Use min=max=3 so phase 1 tries only length 3, and phase 2 is skipped
+        // (no room to extend). Instead, use min=3, max=5 so phase 2 can extend to 4 and 5.
+        let generator = IdGenerator::new(IdConfig::new("bd").min_hash_length(3).max_hash_length(5));
+
+        // Collect all phase 1 candidates (nonces 0-9 at optimal length 3)
+        let optimal = generator.optimal_length(0);
+        assert_eq!(optimal, 3);
+
+        let mut phase1_candidates: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+        for nonce in 0..10 {
+            let seed = format!("seed-{}", nonce).into_bytes();
+            let candidate = generator.candidate(&seed, optimal);
+            phase1_candidates.insert(candidate);
+        }
+
+        // exists_fn rejects all phase 1 candidates, forcing phase 2
+        let id = generator.generate(
+            |nonce| format!("seed-{}", nonce).into_bytes(),
+            0,
+            |candidate| phase1_candidates.contains(candidate),
+        );
+
+        // The result should have a longer hash (4 or 5 chars, not 3)
+        assert!(id.starts_with("bd-"));
+        let hash_part = &id["bd-".len()..];
+        assert!(
+            hash_part.len() > optimal,
+            "Expected hash longer than {} chars, got '{}' ({})",
+            optimal,
+            hash_part,
+            hash_part.len()
+        );
+    }
+
+    #[test]
+    fn test_generate_phase2_exhausts_multiple_lengths() {
+        // min=3, max=5: phase 1 at length 3, phase 2 tries lengths 4 and 5
+        let generator = IdGenerator::new(IdConfig::new("bd").min_hash_length(3).max_hash_length(5));
+
+        // Collect all candidates for lengths 3 AND 4 (nonces 0-9 each)
+        let mut reject: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for length in 3..=4 {
+            for nonce in 0..10 {
+                let seed = format!("seed-{}", nonce).into_bytes();
+                let candidate = generator.candidate(&seed, length);
+                reject.insert(candidate);
+            }
+        }
+
+        let id = generator.generate(
+            |nonce| format!("seed-{}", nonce).into_bytes(),
+            0,
+            |candidate| reject.contains(candidate),
+        );
+
+        // Must have length 5 hash (skipped past 3 and 4)
+        assert!(id.starts_with("bd-"));
+        let hash_part = &id["bd-".len()..];
+        assert_eq!(
+            hash_part.len(),
+            5,
+            "Expected 5-char hash, got '{}' ({})",
+            hash_part,
+            hash_part.len()
+        );
+    }
+
+    // ========== Phase 3: Long fallback tests ==========
+
+    #[test]
+    fn test_generate_phase3_long_fallback() {
+        // min=max=3 so phase 2 has no room to extend, forcing phase 3
+        let generator = IdGenerator::new(IdConfig::new("bd").min_hash_length(3).max_hash_length(3));
+
+        // Collect all phase 1 candidates (nonces 0-9 at length 3)
+        let mut reject: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for nonce in 0..10 {
+            let seed = format!("seed-{}", nonce).into_bytes();
+            let candidate = generator.candidate(&seed, 3);
+            reject.insert(candidate);
+        }
+        // Phase 2 range is (3+1)..=3 which is empty, so we jump straight to phase 3.
+
+        let id = generator.generate(
+            |nonce| format!("seed-{}", nonce).into_bytes(),
+            0,
+            |candidate| reject.contains(candidate),
+        );
+
+        // Phase 3 generates 12-char hashes
+        assert!(id.starts_with("bd-"));
+        let hash_part = &id["bd-".len()..];
+        assert_eq!(
+            hash_part.len(),
+            12,
+            "Expected 12-char hash from phase 3, got '{}' ({})",
+            hash_part,
+            hash_part.len()
+        );
+    }
+
+    // ========== Phase 4: Desperate fallback tests ==========
+
+    #[test]
+    fn test_generate_phase4_desperate_fallback() {
+        // min=max=3 so phase 2 is empty
+        let generator = IdGenerator::new(IdConfig::new("bd").min_hash_length(3).max_hash_length(3));
+
+        // Reject ALL candidates from phases 1-3.
+        // Phase 1: nonces 0-9 at length 3
+        // Phase 2: empty (min=max=3)
+        // Phase 3: nonces 0-1000 at length 12
+        let mut reject: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for nonce in 0..10 {
+            let seed = format!("seed-{}", nonce).into_bytes();
+            reject.insert(generator.candidate(&seed, 3));
+        }
+        for nonce in 0..=1000 {
+            let seed = format!("seed-{}", nonce).into_bytes();
+            reject.insert(generator.candidate(&seed, 12));
+        }
+
+        let id = generator.generate(
+            |nonce| format!("seed-{}", nonce).into_bytes(),
+            0,
+            |candidate| reject.contains(candidate),
+        );
+
+        // Phase 4 appends the nonce number to a 12-char hash: "bd-{12chars}{nonce}"
+        assert!(id.starts_with("bd-"));
+        let hash_part = &id["bd-".len()..];
+        // Must be longer than 12 (12-char hash + nonce digits)
+        assert!(
+            hash_part.len() > 12,
+            "Expected >12-char hash from phase 4, got '{}' ({})",
+            hash_part,
+            hash_part.len()
+        );
+        // Verify it ends with a digit (the appended nonce)
+        assert!(
+            hash_part.chars().last().unwrap().is_ascii_digit(),
+            "Phase 4 ID should end with nonce digit, got '{}'",
+            hash_part
+        );
+    }
+
+    // ========== Absolute fallback test ==========
+
+    #[test]
+    fn test_generate_absolute_fallback() {
+        // min=max=3, reject EVERYTHING
+        let generator = IdGenerator::new(IdConfig::new("bd").min_hash_length(3).max_hash_length(3));
+
+        let id = generator.generate(
+            |nonce| format!("seed-{}", nonce).into_bytes(),
+            0,
+            |_| true, // reject all candidates
+        );
+
+        // Absolute fallback format: "bd-{12chars}.fallback"
+        assert!(
+            id.ends_with(".fallback"),
+            "Expected '.fallback' suffix, got '{}'",
+            id
+        );
+        assert!(id.starts_with("bd-"));
+    }
+
+    // ========== Phase transition tracking test ==========
+
+    #[test]
+    fn test_generate_phase_transitions_are_ordered() {
+        use std::cell::Cell;
+
+        // min=3, max=4 — phase 1 at 3, phase 2 at 4, then phase 3 at 12
+        let generator = IdGenerator::new(IdConfig::new("bd").min_hash_length(3).max_hash_length(4));
+
+        let call_count = Cell::new(0usize);
+
+        // Let the 15th candidate through (0-indexed):
+        // Phase 1: 10 candidates (nonces 0-9 at length 3) → indices 0-9
+        // Phase 2: 10 candidates (nonces 0-9 at length 4) → indices 10-19
+        // We accept at index 15, which is phase 2 nonce 5 at length 4
+        let id = generator.generate(
+            |nonce| format!("seed-{}", nonce).into_bytes(),
+            0,
+            |_candidate| {
+                let n = call_count.get();
+                call_count.set(n + 1);
+                n < 15
+            },
+        );
+
+        assert_eq!(call_count.get(), 16); // 15 rejections + 1 acceptance
+        assert!(id.starts_with("bd-"));
+        let hash_part = &id["bd-".len()..];
+        assert_eq!(hash_part.len(), 4, "Should be phase 2 (length 4)");
     }
 }

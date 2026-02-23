@@ -7,7 +7,10 @@ pub enum TerseIdError {
     PrefixMismatch { expected: String, found: String },
 
     #[error("ambiguous ID '{partial}': matches {matches:?}")]
-    AmbiguousId { partial: String, matches: Vec<String> },
+    AmbiguousId {
+        partial: String,
+        matches: Vec<String>,
+    },
 
     #[error("ID not found: {id}")]
     NotFound { id: String },

@@ -13,18 +13,21 @@ pub struct ParsedId {
 
 impl ParsedId {
     /// Returns true if this ID has no child path segments.
-    pub fn is_root(&self) -> bool {
+    #[must_use]
+    pub const fn is_root(&self) -> bool {
         self.child_path.is_empty()
     }
 
     /// Returns the depth of this ID (number of child path segments).
-    pub fn depth(&self) -> usize {
+    #[must_use]
+    pub const fn depth(&self) -> usize {
         self.child_path.len()
     }
 
     /// Returns the parent ID, or None if this is a root ID.
     ///
     /// For example, "bd-a7x.1.3" -> Some("bd-a7x.1")
+    #[must_use]
     pub fn parent(&self) -> Option<String> {
         if self.child_path.is_empty() {
             None
@@ -35,11 +38,14 @@ impl ParsedId {
         }
     }
 
-    /// Formats this ParsedId as a complete ID string.
+    /// Formats this `ParsedId` as a complete ID string.
     ///
     /// Returns format: "{prefix}-{hash}" with child path segments separated by dots.
+    #[must_use]
     pub fn to_id_string(&self) -> String {
-        let mut result = format!("{}-{}", self.prefix, self.hash);
+        let prefix = &self.prefix;
+        let hash = &self.hash;
+        let mut result = format!("{prefix}-{hash}");
         for segment in &self.child_path {
             result.push('.');
             result.push_str(&segment.to_string());
@@ -51,12 +57,12 @@ impl ParsedId {
     ///
     /// A child ID must:
     /// - Have the same prefix and hash as the parent
-    /// - Have a child_path that starts with the parent's child_path
-    /// - Have a longer child_path than the parent (deeper in the tree)
+    /// - Have a `child_path` that starts with the parent's `child_path`
+    /// - Have a longer `child_path` than the parent (deeper in the tree)
+    #[must_use]
     pub fn is_child_of(&self, potential_parent: &str) -> bool {
-        let parent = match parse_id(potential_parent) {
-            Ok(p) => p,
-            Err(_) => return false,
+        let Ok(parent) = parse_id(potential_parent) else {
+            return false;
         };
 
         // Must have same prefix and hash
@@ -84,7 +90,7 @@ impl fmt::Display for ParsedId {
 }
 
 /// Checks if a character is valid in base36.
-fn is_base36(c: char) -> bool {
+const fn is_base36(c: char) -> bool {
     c.is_ascii_alphanumeric()
 }
 
@@ -121,11 +127,8 @@ pub fn parse_id(id: &str) -> Result<ParsedId> {
 
     // Find the last dash before the child path (or at the end if no dot)
     let search_end = first_dot.unwrap_or(id.len());
-    let last_dash = match id[..search_end].rfind('-') {
-        Some(pos) => pos,
-        None => {
-            return Err(TerseIdError::InvalidId { id });
-        }
+    let Some(last_dash) = id[..search_end].rfind('-') else {
+        return Err(TerseIdError::InvalidId { id });
     };
 
     let prefix = id[..last_dash].to_string();
@@ -176,11 +179,13 @@ pub fn parse_id(id: &str) -> Result<ParsedId> {
 ///
 /// This is a convenience function that tries to parse the ID and returns
 /// a boolean instead of a Result.
+#[must_use]
 pub fn is_valid_id_format(id: &str) -> bool {
     parse_id(id).is_ok()
 }
 
 /// Normalizes an ID string by converting it to lowercase.
+#[must_use]
 pub fn normalize_id(id: &str) -> String {
     id.to_lowercase()
 }
@@ -449,7 +454,12 @@ mod tests {
         let b = parse_id("bd-a7x.1").unwrap();
         let c = parse_id("bd-a7x.1.3").unwrap();
 
-        assert_eq!(b.parent(), a.parent().map(|_| "bd-a7x".to_string()).or(Some("bd-a7x".to_string())));
+        assert_eq!(
+            b.parent(),
+            a.parent()
+                .map(|_| "bd-a7x".to_string())
+                .or(Some("bd-a7x".to_string()))
+        );
         assert_eq!(c.parent(), Some("bd-a7x.1".to_string()));
     }
 
@@ -631,7 +641,8 @@ mod tests {
 
     #[test]
     fn test_very_long_hash() {
-        let parsed = parse_id("bd-a7x3q9z2w1e0r5t4y3u2i1o0p9a8s7d6f5g4h3j2k1l0z9x8c7v6b5n4m3").unwrap();
+        let parsed =
+            parse_id("bd-a7x3q9z2w1e0r5t4y3u2i1o0p9a8s7d6f5g4h3j2k1l0z9x8c7v6b5n4m3").unwrap();
         assert!(parsed.hash.len() > 30);
     }
 
