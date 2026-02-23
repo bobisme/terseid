@@ -64,6 +64,7 @@ pub fn id_depth(id: &str) -> usize {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

@@ -40,6 +40,7 @@ pub fn hash(input: impl AsRef<[u8]>, length: usize) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -57,7 +58,7 @@ mod tests {
         // First 8 bytes as big-endian u64: 0x2cf24dba5fb0a30e = 3238736544897475342
         let input = b"hello";
         let hash = compute_hash(input);
-        assert_eq!(hash, 3238736544897475342);
+        assert_eq!(hash, 3_238_736_544_897_475_342);
     }
 
     #[test]
@@ -94,7 +95,7 @@ mod tests {
         let encoded = base36_encode(value);
         for c in encoded.chars() {
             assert!(
-                c.is_ascii_digit() || (c >= 'a' && c <= 'z'),
+                c.is_ascii_digit() || c.is_ascii_lowercase(),
                 "Invalid base36 character: {c}"
             );
         }
@@ -129,7 +130,7 @@ mod tests {
         assert!(
             result
                 .chars()
-                .all(|c| c.is_ascii_digit() || (c >= 'a' && c <= 'z'))
+                .all(|c| c.is_ascii_digit() || c.is_ascii_lowercase())
         );
     }
 
@@ -156,9 +157,44 @@ mod tests {
         let result = hash(input, 15);
         for c in result.chars() {
             assert!(
-                c.is_ascii_digit() || (c >= 'a' && c <= 'z'),
+                c.is_ascii_digit() || c.is_ascii_lowercase(),
                 "Invalid base36 character in hash: {c}"
             );
+        }
+    }
+
+    mod proptests {
+        use super::*;
+        use proptest::proptest;
+
+        proptest! {
+            #[test]
+            fn base36_valid_alphabet(value: u64) {
+                let encoded = base36_encode(value);
+                for c in encoded.chars() {
+                    assert!(
+                        c.is_ascii_digit() || c.is_ascii_lowercase(),
+                        "base36_encode produced invalid character: {c}"
+                    );
+                }
+            }
+
+            #[test]
+            fn hash_returns_exact_length(input in ".*", length in 1usize..100) {
+                let result = hash(input.as_bytes(), length);
+                assert_eq!(result.len(), length);
+            }
+
+            #[test]
+            fn hash_valid_chars(input in ".*", length in 1usize..50) {
+                let result = hash(input.as_bytes(), length);
+                for c in result.chars() {
+                    assert!(
+                        c.is_ascii_digit() || c.is_ascii_lowercase(),
+                        "hash produced invalid character: {c}"
+                    );
+                }
+            }
         }
     }
 }

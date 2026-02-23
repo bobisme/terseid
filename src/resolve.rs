@@ -155,6 +155,7 @@ pub fn find_matching_ids(all_ids: &[impl AsRef<str>], hash_substring: &str) -> V
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::similar_names)]
 mod tests {
     use super::*;
 

@@ -19,6 +19,7 @@ pub enum TerseIdError {
 pub type Result<T> = std::result::Result<T, TerseIdError>;
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -67,7 +68,7 @@ mod tests {
         let error = TerseIdError::InvalidId {
             id: "test".to_string(),
         };
-        assert!(format!("{:?}", error).contains("InvalidId"));
+        assert!(format!("{error:?}").contains("InvalidId"));
     }
 
     #[test]

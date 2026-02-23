@@ -124,6 +124,7 @@ impl IdGenerator {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -249,7 +250,7 @@ mod tests {
 
         for i in 0..10 {
             let id = generator.generate(
-                |nonce| format!("seed{}-{}", i, nonce).into_bytes(),
+                |nonce| format!("seed{i}-{nonce}").into_bytes(),
                 0,
                 |candidate| generated.contains(&candidate.to_string()),
             );
@@ -269,19 +270,17 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_handles_collisions() {
+    fn test_generate_deterministic_seed() {
         let generator = IdGenerator::new(IdConfig::new("bd"));
-        let taken: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         let id = generator.generate(
-            |_nonce| b"forced-collision".to_vec(),
+            |_nonce| b"fixed-seed".to_vec(),
             0,
-            |candidate| taken.contains(candidate),
+            |_| false,
         );
 
-        // Should still generate something valid
         assert!(id.starts_with("bd-"));
-        assert!(id.len() > 0);
+        assert!(!id.is_empty());
     }
 
     #[test]
@@ -289,7 +288,7 @@ mod tests {
         let generator = IdGenerator::new(IdConfig::new("bd"));
 
         let id = generator.generate(
-            |nonce| format!("content-{}", nonce).into_bytes(),
+            |nonce| format!("content-{nonce}").into_bytes(),
             250_000,            // High item count should use longer hashes
             |_candidate| false, // No collisions
         );
@@ -307,7 +306,7 @@ mod tests {
         let generator = IdGenerator::new(IdConfig::new("test"));
 
         let id = generator.generate(
-            |nonce| format!("data-{}", nonce).into_bytes(),
+            |nonce| format!("data-{nonce}").into_bytes(),
             10,
             |_| false,
         );
@@ -356,7 +355,7 @@ mod tests {
         let generator = IdGenerator::new(IdConfig::new("bd"));
 
         let id = generator.generate(
-            |nonce| format!("user-description-{}", nonce).into_bytes(),
+            |nonce| format!("user-description-{nonce}").into_bytes(),
             50,
             |_| false,
         );
@@ -369,7 +368,7 @@ mod tests {
         let generator = IdGenerator::new(IdConfig::new("bd"));
 
         for seed_val in 0..100 {
-            let candidate = generator.candidate(format!("seed-{}", seed_val).as_bytes(), 6);
+            let candidate = generator.candidate(format!("seed-{seed_val}").as_bytes(), 6);
 
             // Extract hash part
             let parts: Vec<&str> = candidate.split('-').collect();
@@ -378,10 +377,8 @@ mod tests {
             let hash = parts[1];
             for ch in hash.chars() {
                 assert!(
-                    ch.is_ascii_digit() || (ch >= 'a' && ch <= 'z'),
-                    "Invalid base36 char in {}: {}",
-                    candidate,
-                    ch
+                    ch.is_ascii_digit() || ch.is_ascii_lowercase(),
+                    "Invalid base36 char in {candidate}: {ch}"
                 );
             }
         }
@@ -391,9 +388,9 @@ mod tests {
     fn test_generate_always_returns_valid_format() {
         let generator = IdGenerator::new(IdConfig::new("prefix"));
 
-        for item_count in [0, 1, 10, 100, 1000, 10000].iter() {
+        for item_count in &[0, 1, 10, 100, 1000, 10000] {
             let id = generator.generate(
-                |nonce| format!("seed-{}", nonce).into_bytes(),
+                |nonce| format!("seed-{nonce}").into_bytes(),
                 *item_count,
                 |_| false,
             );
@@ -406,10 +403,8 @@ mod tests {
             // All chars should be valid base36 or our fallback format
             for ch in hash_part.chars() {
                 assert!(
-                    ch.is_ascii_digit() || (ch >= 'a' && ch <= 'z'),
-                    "Invalid char in {}: {}",
-                    id,
-                    ch
+                    ch.is_ascii_digit() || ch.is_ascii_lowercase(),
+                    "Invalid char in {id}: {ch}"
                 );
             }
         }
@@ -419,8 +414,7 @@ mod tests {
 
     #[test]
     fn test_generate_phase2_length_extension() {
-        // Use min=max=3 so phase 1 tries only length 3, and phase 2 is skipped
-        // (no room to extend). Instead, use min=3, max=5 so phase 2 can extend to 4 and 5.
+        // min=3, max=5 so phase 2 can extend to lengths 4 and 5.
         let generator = IdGenerator::new(IdConfig::new("bd").min_hash_length(3).max_hash_length(5));
 
         // Collect all phase 1 candidates (nonces 0-9 at optimal length 3)
@@ -430,14 +424,14 @@ mod tests {
         let mut phase1_candidates: std::collections::HashSet<String> =
             std::collections::HashSet::new();
         for nonce in 0..10 {
-            let seed = format!("seed-{}", nonce).into_bytes();
+            let seed = format!("seed-{nonce}").into_bytes();
             let candidate = generator.candidate(&seed, optimal);
             phase1_candidates.insert(candidate);
         }
 
         // exists_fn rejects all phase 1 candidates, forcing phase 2
         let id = generator.generate(
-            |nonce| format!("seed-{}", nonce).into_bytes(),
+            |nonce| format!("seed-{nonce}").into_bytes(),
             0,
             |candidate| phase1_candidates.contains(candidate),
         );
@@ -463,14 +457,14 @@ mod tests {
         let mut reject: std::collections::HashSet<String> = std::collections::HashSet::new();
         for length in 3..=4 {
             for nonce in 0..10 {
-                let seed = format!("seed-{}", nonce).into_bytes();
+                let seed = format!("seed-{nonce}").into_bytes();
                 let candidate = generator.candidate(&seed, length);
                 reject.insert(candidate);
             }
         }
 
         let id = generator.generate(
-            |nonce| format!("seed-{}", nonce).into_bytes(),
+            |nonce| format!("seed-{nonce}").into_bytes(),
             0,
             |candidate| reject.contains(candidate),
         );
@@ -497,14 +491,14 @@ mod tests {
         // Collect all phase 1 candidates (nonces 0-9 at length 3)
         let mut reject: std::collections::HashSet<String> = std::collections::HashSet::new();
         for nonce in 0..10 {
-            let seed = format!("seed-{}", nonce).into_bytes();
+            let seed = format!("seed-{nonce}").into_bytes();
             let candidate = generator.candidate(&seed, 3);
             reject.insert(candidate);
         }
         // Phase 2 range is (3+1)..=3 which is empty, so we jump straight to phase 3.
 
         let id = generator.generate(
-            |nonce| format!("seed-{}", nonce).into_bytes(),
+            |nonce| format!("seed-{nonce}").into_bytes(),
             0,
             |candidate| reject.contains(candidate),
         );
@@ -534,16 +528,16 @@ mod tests {
         // Phase 3: nonces 0-1000 at length 12
         let mut reject: std::collections::HashSet<String> = std::collections::HashSet::new();
         for nonce in 0..10 {
-            let seed = format!("seed-{}", nonce).into_bytes();
+            let seed = format!("seed-{nonce}").into_bytes();
             reject.insert(generator.candidate(&seed, 3));
         }
         for nonce in 0..=1000 {
-            let seed = format!("seed-{}", nonce).into_bytes();
+            let seed = format!("seed-{nonce}").into_bytes();
             reject.insert(generator.candidate(&seed, 12));
         }
 
         let id = generator.generate(
-            |nonce| format!("seed-{}", nonce).into_bytes(),
+            |nonce| format!("seed-{nonce}").into_bytes(),
             0,
             |candidate| reject.contains(candidate),
         );
@@ -560,9 +554,8 @@ mod tests {
         );
         // Verify it ends with a digit (the appended nonce)
         assert!(
-            hash_part.chars().last().unwrap().is_ascii_digit(),
-            "Phase 4 ID should end with nonce digit, got '{}'",
-            hash_part
+            hash_part.ends_with(|c: char| c.is_ascii_digit()),
+            "Phase 4 ID should end with nonce digit, got '{hash_part}'"
         );
     }
 
@@ -574,7 +567,7 @@ mod tests {
         let generator = IdGenerator::new(IdConfig::new("bd").min_hash_length(3).max_hash_length(3));
 
         let id = generator.generate(
-            |nonce| format!("seed-{}", nonce).into_bytes(),
+            |nonce| format!("seed-{nonce}").into_bytes(),
             0,
             |_| true, // reject all candidates
         );
@@ -582,8 +575,7 @@ mod tests {
         // Absolute fallback format: "bd-{12chars}.fallback"
         assert!(
             id.ends_with(".fallback"),
-            "Expected '.fallback' suffix, got '{}'",
-            id
+            "Expected '.fallback' suffix, got '{id}'"
         );
         assert!(id.starts_with("bd-"));
     }
@@ -604,7 +596,7 @@ mod tests {
         // Phase 2: 10 candidates (nonces 0-9 at length 4) → indices 10-19
         // We accept at index 15, which is phase 2 nonce 5 at length 4
         let id = generator.generate(
-            |nonce| format!("seed-{}", nonce).into_bytes(),
+            |nonce| format!("seed-{nonce}").into_bytes(),
             0,
             |_candidate| {
                 let n = call_count.get();

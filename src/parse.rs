@@ -136,10 +136,6 @@ pub fn parse_id(id: &str) -> Result<ParsedId> {
 
     // Split by dots: first segment is hash, rest are child path
     let segments: Vec<&str> = rest.split('.').collect();
-    if segments.is_empty() {
-        return Err(TerseIdError::InvalidId { id });
-    }
-
     let hash = segments[0];
 
     // Validate hash
@@ -216,6 +212,7 @@ pub fn validate_prefix(id: &str, expected: &str, allowed: &[&str]) -> Result<()>
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -283,7 +280,7 @@ mod tests {
     #[test]
     fn test_child_path_max_u32() {
         let max_u32 = u32::MAX;
-        let id = format!("bd-a7x.{}", max_u32);
+        let id = format!("bd-a7x.{max_u32}");
         let parsed = parse_id(&id).unwrap();
         assert_eq!(parsed.child_path, vec![max_u32]);
     }
@@ -352,8 +349,8 @@ mod tests {
     #[test]
     fn test_invalid_child_path_overflow() {
         // u64 string that overflows u32
-        let huge = (u32::MAX as u64 + 1).to_string();
-        let id = format!("bd-a7x.{}", huge);
+        let huge = (u64::from(u32::MAX) + 1).to_string();
+        let id = format!("bd-a7x.{huge}");
         assert!(parse_id(&id).is_err());
     }
 
@@ -449,17 +446,12 @@ mod tests {
 
     #[test]
     fn test_parent_chain() {
-        // Test the chain: a -> b -> c
         let a = parse_id("bd-a7x").unwrap();
         let b = parse_id("bd-a7x.1").unwrap();
         let c = parse_id("bd-a7x.1.3").unwrap();
 
-        assert_eq!(
-            b.parent(),
-            a.parent()
-                .map(|_| "bd-a7x".to_string())
-                .or(Some("bd-a7x".to_string()))
-        );
+        assert_eq!(a.parent(), None);
+        assert_eq!(b.parent(), Some("bd-a7x".to_string()));
         assert_eq!(c.parent(), Some("bd-a7x.1".to_string()));
     }
 
@@ -519,9 +511,7 @@ mod tests {
 
     #[test]
     fn test_is_child_of_different_path_branch() {
-        let _id1 = parse_id("bd-a7x.1.3").unwrap();
         let id2 = parse_id("bd-a7x.1.5").unwrap();
-        // id2 is not a child of id1 (different path)
         assert!(!id2.is_child_of("bd-a7x.1.3"));
     }
 
@@ -530,13 +520,13 @@ mod tests {
     #[test]
     fn test_display_simple() {
         let parsed = parse_id("bd-a7x").unwrap();
-        assert_eq!(format!("{}", parsed), "bd-a7x");
+        assert_eq!(format!("{parsed}"), "bd-a7x");
     }
 
     #[test]
     fn test_display_with_path() {
         let parsed = parse_id("bd-a7x.1.3").unwrap();
-        assert_eq!(format!("{}", parsed), "bd-a7x.1.3");
+        assert_eq!(format!("{parsed}"), "bd-a7x.1.3");
     }
 
     // ========== is_valid_id_format ==========
@@ -668,7 +658,7 @@ mod tests {
     #[test]
     fn test_debug_format() {
         let parsed = parse_id("bd-a7x").unwrap();
-        let debug_str = format!("{:?}", parsed);
+        let debug_str = format!("{parsed:?}");
         assert!(debug_str.contains("ParsedId"));
         assert!(debug_str.contains("bd"));
         assert!(debug_str.contains("a7x"));

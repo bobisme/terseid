@@ -69,7 +69,7 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-terseid = { git = "https://github.com/bobisme/terseid.git" }
+terseid = "0.1"
 ```
 
 Generate an ID:
