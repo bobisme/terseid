@@ -410,6 +410,40 @@ mod tests {
         }
     }
 
+    // ========== Round-trip through parse_id ==========
+
+    #[test]
+    fn test_generate_roundtrips_through_parse_id() {
+        for item_count in [0, 10, 100, 1000, 10000] {
+            let generator = IdGenerator::new(IdConfig::new("bd"));
+            for i in 0..50 {
+                let id = generator.generate(
+                    |nonce| format!("seed-{i}-{nonce}").into_bytes(),
+                    item_count,
+                    |_| false,
+                );
+                assert!(
+                    crate::parse::is_valid_id_format(&id),
+                    "generated ID fails parse_id validation: {id} (item_count={item_count}, i={i})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_candidate_roundtrips_through_parse_id() {
+        let generator = IdGenerator::new(IdConfig::new("bd"));
+        for length in 3..=12 {
+            for i in 0..100 {
+                let candidate = generator.candidate(format!("seed-{i}").as_bytes(), length);
+                assert!(
+                    crate::parse::is_valid_id_format(&candidate),
+                    "candidate fails parse_id validation: {candidate} (length={length}, i={i})"
+                );
+            }
+        }
+    }
+
     // ========== Phase 2: Length extension tests ==========
 
     #[test]

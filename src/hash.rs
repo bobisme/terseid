@@ -28,15 +28,30 @@ pub(crate) fn base36_encode(value: u64) -> String {
     String::from_utf8(result).expect("base36 chars are always valid UTF-8")
 }
 
-/// Public standalone hash function: base36 hash truncated/zero-padded to length chars
+/// Public standalone hash function: base36 hash truncated/zero-padded to length chars.
+///
+/// For hashes of 4+ characters, guarantees at least one digit is present.
+/// This ensures the output is always accepted by `parse_id`, which rejects
+/// 4+ char all-letter hashes to avoid ambiguity with English words.
 pub fn hash(input: impl AsRef<[u8]>, length: usize) -> String {
     let h = compute_hash(input);
     let encoded = base36_encode(h);
-    if encoded.len() >= length {
+    let mut result = if encoded.len() >= length {
         encoded[..length].to_string()
     } else {
         format!("{encoded:0>length$}")
+    };
+
+    // Ensure 4+ char hashes contain at least one digit (parse_id requirement)
+    if length >= 4 && !result.chars().any(|c| c.is_ascii_digit()) {
+        // Replace the last character with a digit derived from the hash value
+        let digit = char::from(b'0' + (h % 10) as u8);
+        let mut chars: Vec<char> = result.chars().collect();
+        chars[length - 1] = digit;
+        result = chars.into_iter().collect();
     }
+
+    result
 }
 
 #[cfg(test)]
@@ -163,6 +178,32 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_hash_4plus_chars_contains_digit() {
+        // Test many inputs to find one that would produce an all-letter hash
+        for i in 0..1000 {
+            let input = format!("seed-{i}");
+            for length in 4..=12 {
+                let result = hash(input.as_bytes(), length);
+                assert!(
+                    result.chars().any(|c| c.is_ascii_digit()),
+                    "hash of {:?} at length {} produced all-letter hash: {}",
+                    input,
+                    length,
+                    result
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_hash_3_chars_no_digit_requirement() {
+        // 3-char hashes don't need a digit — just verify they're valid base36
+        let result = hash(b"test", 3);
+        assert_eq!(result.len(), 3);
+        assert!(result.chars().all(|c| c.is_ascii_digit() || c.is_ascii_lowercase()));
+    }
+
     mod proptests {
         use super::*;
         use proptest::proptest;
@@ -194,6 +235,17 @@ mod tests {
                         "hash produced invalid character: {c}"
                     );
                 }
+            }
+
+            #[test]
+            fn hash_4plus_always_has_digit(input in ".*", length in 4usize..20) {
+                let result = hash(input.as_bytes(), length);
+                assert!(
+                    result.chars().any(|c| c.is_ascii_digit()),
+                    "hash of length {} has no digit: {}",
+                    length,
+                    result
+                );
             }
         }
     }
