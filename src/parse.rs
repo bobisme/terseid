@@ -94,11 +94,6 @@ const fn is_base36(c: char) -> bool {
     c.is_ascii_alphanumeric()
 }
 
-/// Checks if a string contains at least one digit.
-fn contains_digit(s: &str) -> bool {
-    s.chars().any(|c| c.is_ascii_digit())
-}
-
 /// Parses a terseid ID string into a structured `ParsedId`.
 ///
 /// Parsing rules:
@@ -148,10 +143,10 @@ pub fn parse_id(id: &str) -> Result<ParsedId> {
         return Err(TerseIdError::InvalidId { id });
     }
 
-    // Hash at 4+ chars must contain at least one digit
-    if hash.len() >= 4 && !contains_digit(hash) {
-        return Err(TerseIdError::InvalidId { id });
-    }
+    // NOTE: The generator ensures new 4+ char hashes contain a digit (to
+    // avoid ambiguity with English words), but the parser must accept
+    // all-letter hashes for backward compatibility with IDs generated before
+    // that constraint was added.
 
     // Parse child path segments
     let mut child_path = Vec::new();
@@ -297,18 +292,19 @@ mod tests {
     }
 
     #[test]
-    fn test_hash_4_chars_requires_digit() {
-        // 4-char hashes must contain at least one digit
+    fn test_hash_4_chars_accepts_all_base36() {
+        // Parser accepts all base36 hashes (digit requirement is generator-side only)
         assert!(parse_id("bd-a7x3").is_ok()); // contains digits
-        assert!(parse_id("bd-test").is_err()); // no digit, invalid
+        assert!(parse_id("bd-test").is_ok()); // all-letter, accepted for backward compat
         assert!(parse_id("bd-a0bc").is_ok()); // contains digit
+        assert!(parse_id("bd-unwi").is_ok()); // regression: previously rejected
     }
 
     #[test]
-    fn test_hash_5_chars_requires_digit() {
-        // 5-char hashes must contain at least one digit
+    fn test_hash_5_chars_accepts_all_base36() {
+        // Parser accepts all base36 hashes (digit requirement is generator-side only)
         assert!(parse_id("bd-a7x3q9").is_ok()); // multiple digits
-        assert!(parse_id("bd-abcde").is_err()); // no digit, invalid
+        assert!(parse_id("bd-abcde").is_ok()); // all-letter, accepted for backward compat
         assert!(parse_id("bd-abc0d").is_ok()); // contains digit
     }
 
@@ -542,7 +538,13 @@ mod tests {
     fn test_is_valid_id_format_invalid() {
         assert!(!is_valid_id_format("bda7x"));
         assert!(!is_valid_id_format("bd-"));
-        assert!(!is_valid_id_format("bd-test")); // 4+ chars without digit
+    }
+
+    #[test]
+    fn test_is_valid_id_format_all_letter_hash() {
+        // All-letter 4+ char hashes are valid (backward compat)
+        assert!(is_valid_id_format("bd-test"));
+        assert!(is_valid_id_format("bd-unwi"));
     }
 
     // ========== normalize_id ==========
